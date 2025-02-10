@@ -1,0 +1,44 @@
+# Sysbench Test Configuration
+
+# global configuration
+global:
+  enabled_tests: 
+    - cpu
+    - memory
+    - fileio
+
+# cpu test configuration
+cpu:
+  enabled: true
+  single_thread: 
+    enabled: true
+    events: 0   #no limit
+    time: 30   # 30 seconds
+    threads: 1
+  multi_thread:   # multi-thread test
+    enabled: true
+    events: 0
+    time: 30
+    threads: "auto"  # auto means using CPU cores
+
+# memory test configuration
+memory:
+  enabled: true
+  threads: 4
+  time: 30
+  block_size: "1K"
+  total_size: "100G"
+
+# fileio test configuration
+fileio:
+  enabled: true
+  file_total_size: "4G"
+  file_num: 4
+  threads: 4
+  time: 60
+  modes:  # test modes
+    - name: "rndrw"
+      enabled: true
+    - name: "seqrd"
+      enabled: true
+  cleanup: true  # whether to clean up files after tests
