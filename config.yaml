@@ -2,10 +2,7 @@
 
 # global configuration
 global:
-  enabled_tests: 
-    - cpu
-    - memory
-    - fileio
+  enabled_tests: ["cpu", "memory", "fileio", "network"]
 
 # cpu test configuration
 cpu:
@@ -41,4 +38,13 @@ fileio:
       enabled: true
     - name: "seqrd"
       enabled: true
+    - name: "seqwr"
+      enabled: false
   cleanup: true  # whether to clean up files after tests
+
+# network test configuration
+network:
+  enabled: false  # 默认关闭，需要配置服务器IP才能使用
+  server_ip: ""   # 设置iperf3服务器IP地址
+  time: 10        # 测试时间（秒）
+  port: 5201      # iperf3默认端口

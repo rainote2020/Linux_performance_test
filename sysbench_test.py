@@ -4,13 +4,166 @@ import datetime
 import os
 import multiprocessing
 import json
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 import shutil
 import sys
 import logging
 from enum import Enum
 import yaml
 from pathlib import Path
+import platform
+import requests
+import tarfile
+import tempfile
+from dataclasses import dataclass
+
+
+@dataclass
+class SystemInfo:
+    """System information data class"""
+
+    arch: str  # System architecture
+    distro: str  # Distribution name
+    distro_version: str  # Distribution version
+    package_manager: str  # Package manager
+
+
+class PackageInstaller:
+    """Unified package installer"""
+
+    INSTALL_COMMANDS = {
+        "apt": {
+            "update": ["sudo", "apt", "update"],
+            "install": ["sudo", "apt", "install", "-y", "{package}"],
+        },
+        "yum": {
+            "pre_install": ["sudo", "yum", "install", "-y", "epel-release"],
+            "install": ["sudo", "yum", "install", "-y", "{package}"],
+        },
+        "dnf": {
+            "pre_install": ["sudo", "dnf", "install", "-y", "epel-release"],
+            "install": ["sudo", "dnf", "install", "-y", "{package}"],
+        },
+        "pacman": {
+            "update": ["sudo", "pacman", "-Sy"],
+            "install": ["sudo", "pacman", "-S", "--noconfirm", "{package}"],
+        },
+    }
+
+    def __init__(self, system_info: SystemInfo):
+        self.system_info = system_info
+        self.logger = logging.getLogger("sysbench_tester")
+
+    def install(self, package_name: str) -> bool:
+        try:
+            pkg_manager = self.system_info.package_manager
+            commands = self.INSTALL_COMMANDS.get(pkg_manager)
+
+            if not commands:
+                self.logger.error(f"Unsupported package manager: {pkg_manager}")
+                return False
+
+            # Run update if available
+            if "update" in commands:
+                subprocess.run(commands["update"], check=True)
+
+            # Run pre-install if available
+            if "pre_install" in commands:
+                subprocess.run(commands["pre_install"], check=True)
+
+            # Run install
+            install_cmd = [arg.format(package=package_name) for arg in commands["install"]]
+            subprocess.run(install_cmd, check=True)
+            return True
+
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Installation failed: {str(e)}")
+            return False
+
+
+class SystemDetector:
+    """System information detector"""
+
+    def __init__(self):
+        self.logger = logging.getLogger("sysbench_tester")
+
+    def detect_arch(self) -> str:
+        """Detect system architecture"""
+        arch = platform.machine().lower()
+        if arch in ["x86_64", "amd64"]:
+            return "amd64"
+        elif arch in ["aarch64", "arm64"]:
+            return "arm64"
+        elif arch in ["armv7l", "armhf"]:
+            return "armhf"
+        else:
+            return arch
+
+    def detect_package_manager(self) -> str:
+        """Detect system package manager"""
+        if shutil.which("apt"):
+            return "apt"
+        elif shutil.which("dnf"):
+            return "dnf"
+        elif shutil.which("yum"):
+            return "yum"
+        elif shutil.which("pacman"):
+            return "pacman"
+        return "unknown"
+
+    def get_system_info(self) -> SystemInfo:
+        import distro
+
+        """Get complete system information"""
+        arch = self.detect_arch()
+        pkg_manager = self.detect_package_manager()
+
+        return SystemInfo(
+            arch=arch, distro=distro.id(), distro_version=distro.version(), package_manager=pkg_manager
+        )
+
+
+class PackageManager:
+    """Package management system"""
+
+    def __init__(self, system_info: SystemInfo):
+        self.system_info = system_info
+        self.logger = logging.getLogger("sysbench_tester")
+        self.installer = PackageInstaller(self.system_info)
+
+    def download_package_from_githubrelease(self, url: str, output_path: str) -> bool:
+        """Download package from URL"""
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to download package: {str(e)}")
+            return False
+
+    def install_package(self, package_name: str, release_url: Optional[str] = None) -> bool:
+        """Install package from package manager or URL
+
+        Args:
+            package_name: Name of the package to install
+            release_url: Optional URL for direct download installation
+        """
+        if release_url:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                package_path = os.path.join(temp_dir, f"{package_name}.tar.gz")
+                if self.download_package_from_githubrelease(release_url, package_path):  # 修正方法名
+                    local_installer = PackageInstaller(self.system_info)
+                    return local_installer.install(package_path)
+                return False
+
+        if not self.installer:
+            return False
+
+        return self.installer.install(package_name)
 
 
 class Colors:
@@ -106,51 +259,6 @@ def load_config(config_path: str = "config.yaml") -> Dict:
         return default_config
 
 
-def check_package_manager():
-    """Check system package manager;use which to check"""
-    if shutil.which("apt"):  # Debian/Ubuntu
-        return "apt"
-    elif shutil.which("yum"):  # CentOS/RHEL
-        return "yum"
-    elif shutil.which("dnf"):  # Fedora
-        return "dnf"
-    elif shutil.which("pacman"):  # Arch Linux
-        return "pacman"
-    return None
-
-
-def install_package(package_name: str) -> bool:
-    """Generic package installation function"""
-    pkg_manager = check_package_manager()
-    if not pkg_manager:
-        logger.error("No supported package manager found (apt/yum/dnf/pacman)")
-        return False
-
-    logger.info(f"Installing {package_name} using {pkg_manager}...")
-    try:
-        if pkg_manager == "apt":
-            # Update package list
-            subprocess.run(["sudo", "apt", "update"], check=True)
-            # Install package
-            subprocess.run(["sudo", "apt", "install", "-y", package_name], check=True)
-        elif pkg_manager in ["yum", "dnf"]:
-            # For EPEL packages
-            subprocess.run(["sudo", pkg_manager, "install", "-y", "epel-release"], check=True)
-            # Install package
-            subprocess.run(["sudo", pkg_manager, "install", "-y", package_name], check=True)
-        elif pkg_manager == "pacman":
-            # Update package database
-            subprocess.run(["sudo", "pacman", "-Sy"], check=True)
-            # Install package
-            subprocess.run(["sudo", "pacman", "-S", "--noconfirm", package_name], check=True)
-
-        return shutil.which(package_name) is not None
-
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error during {package_name} installation: {str(e)}")
-        return False
-
-
 def install_sysbench():
     """Install sysbench if not present"""
     logger.info("Checking sysbench...")
@@ -160,19 +268,63 @@ def install_sysbench():
         logger.info("sysbench is already installed")
         return True
 
-    return install_package("sysbench")
+    # Detect system information and create package manager
+    detector = SystemDetector()
+    system_info = detector.get_system_info()
+    pkg_manager = PackageManager(system_info)
+
+    return pkg_manager.install_package("sysbench")
 
 
 def install_fastfetch():
-    """Install fastfetch if not present"""
-    logger.info("Checking fastfetch...")
+    """Install fastfetch with system detection"""
+    logger = logging.getLogger("sysbench_tester")
 
-    # Check if fastfetch is already installed
+    # Check if already installed
     if shutil.which("fastfetch"):
         logger.info("fastfetch is already installed")
         return True
 
-    return install_package("fastfetch")
+    # Detect system information
+    detector = SystemDetector()
+    system_info = detector.get_system_info()
+    logger.info(f"Detected system: {system_info}")
+
+    # Create package manager
+    pkg_manager = PackageManager(system_info)
+
+    # Try package manager installation first
+    if pkg_manager.install_package("fastfetch"):
+        return True
+
+    # If package manager installation fails, try GitHub release
+    logger.info("Package manager installation failed, trying GitHub release...")
+
+    # fastfetch release URL template
+    FASTFETCH_RELEASE = (
+        "https://github.com/fastfetch-cli/fastfetch/releases/download/2.8.7/fastfetch-2.8.7-{arch}.tar.gz"
+    )
+
+    # Download and install from release
+    release_url = FASTFETCH_RELEASE.format(arch=system_info.arch)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        package_path = os.path.join(temp_dir, "fastfetch.tar.gz")
+        if pkg_manager.download_package_from_githubrelease(release_url, package_path):
+            # Extract and install from tar.gz
+            try:
+                with tarfile.open(package_path, "r:gz") as tar:
+                    tar.extractall(path=temp_dir)
+                # Find the binary and move it to /usr/local/bin
+                binary_path = os.path.join(temp_dir, "fastfetch")
+                if os.path.exists(binary_path):
+                    subprocess.run(["sudo", "mv", binary_path, "/usr/local/bin/"], check=True)
+                    subprocess.run(["sudo", "chmod", "+x", "/usr/local/bin/fastfetch"], check=True)
+                    return True
+            except Exception as e:
+                logger.error(f"Failed to install fastfetch from release: {str(e)}")
+                return False
+
+    return False
 
 
 def get_system_info() -> Dict:
@@ -182,7 +334,7 @@ def get_system_info() -> Dict:
         return {}
 
     try:
-        # 使用 --json 格式获取系统信息
+        # Use --json format to get system information
         result = subprocess.run(["fastfetch", "--json"], capture_output=True, text=True, check=True)
         system_info = json.loads(result.stdout)
         logger.info("System information collected successfully")
@@ -309,6 +461,31 @@ class SysbenchTester:
                 "File I/O Cleanup",
             )
 
+    def run_network_test(self):
+        """Run network benchmark tests"""
+        if not self.config.get("network", {}).get("enabled", False):
+            logger.info("Network tests disabled in configuration")
+            return
+
+        cfg = self.config["network"]
+
+        # 检查iperf3是否已安装
+        if not shutil.which("iperf3"):
+            detector = SystemDetector()
+            system_info = detector.get_system_info()
+            pkg_manager = PackageManager(system_info)
+            if not pkg_manager.install_package("iperf3"):
+                logger.error("Failed to install iperf3, skipping network tests")
+                return
+
+        # 运行iperf3测试
+        if cfg.get("server_ip"):
+            self.results["benchmark_results"]["network"] = self.run_command(
+                f"iperf3 -c {cfg['server_ip']} -t {cfg.get('time', 10)} -J", "Network Speed Test"
+            )
+        else:
+            logger.warning("Network test enabled but no server IP specified")
+
     def run_enabled_tests(self):
         """Run all enabled tests according to configuration"""
         enabled_tests = self.config["global"]["enabled_tests"]
@@ -320,6 +497,8 @@ class SysbenchTester:
                 self.run_memory_test()
             elif test == "fileio" and self.config["fileio"]["enabled"]:
                 self.run_fileio_tests()
+            elif test == "network" and self.config.get("network", {}).get("enabled", False):
+                self.run_network_test()
 
     def _parse_cpu_result(self, output: str) -> Dict:
         """Parse CPU test results"""
@@ -367,6 +546,65 @@ class SysbenchTester:
                 result["latency_sum"] = line.split(":")[1].strip()
 
         return result
+
+    def _parse_network_result(self, output: str) -> Dict:
+        """Parse network test results"""
+        try:
+            result = json.loads(output)
+            return {
+                "send_speed": f"{result.get('end', {}).get('sum_sent', {}).get('bits_per_second', 0) / 1000000:.2f} Mbps",
+                "recv_speed": f"{result.get('end', {}).get('sum_received', {}).get('bits_per_second', 0) / 1000000:.2f} Mbps",
+                "retransmits": result.get("end", {}).get("sum_sent", {}).get("retransmits", 0),
+            }
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse iperf3 JSON output"}
+
+    def visualize_results(self):
+        """Create visualization for test results"""
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+
+            # 创建结果可视化目录
+            viz_dir = os.path.join(self.result_dir, "visualizations")
+            os.makedirs(viz_dir, exist_ok=True)
+
+            # CPU测试可视化
+            cpu_results = {}
+            for test_name in ["cpu_single_thread", "cpu_multi_thread"]:
+                if (
+                    test_name in self.results["benchmark_results"]
+                    and self.results["benchmark_results"][test_name]["status"] == "success"
+                ):
+                    result = self._parse_cpu_result(self.results["benchmark_results"][test_name]["output"])
+                    if result["events_per_second"]:
+                        cpu_results[test_name.replace("cpu_", "")] = float(
+                            result["events_per_second"].split()[0]
+                        )
+
+            if cpu_results:
+                plt.figure(figsize=(10, 6))
+                bars = plt.bar(cpu_results.keys(), cpu_results.values())
+                plt.title("CPU Performance: Events per Second")
+                plt.ylabel("Events/sec")
+                for bar in bars:
+                    height = bar.get_height()
+                    plt.text(
+                        bar.get_x() + bar.get_width() / 2.0,
+                        height + 5,
+                        f"{height:.2f}",
+                        ha="center",
+                        va="bottom",
+                    )
+                plt.savefig(os.path.join(viz_dir, "cpu_performance.png"))
+                plt.close()
+
+            # 更多可视化代码可以根据需要添加...
+
+            logger.info(f"Visualizations saved to: {viz_dir}")
+        except ImportError:
+            logger.warning("Matplotlib not installed, skipping visualization")
+            logger.info("Install matplotlib with: pip install matplotlib")
 
     def save_results(self):
         """Save test results"""
@@ -435,6 +673,9 @@ class SysbenchTester:
                     if result["write_throughput"]:
                         f.write(f"Write Speed: {result['write_throughput']} MiB/s\n")
                     f.write(f"Total Latency: {result['latency_sum']} ms\n")
+
+        # 生成可视化结果
+        self.visualize_results()
 
         logger.info("Test completed!")
         logger.info(f"Results saved to: {self.result_dir}/")
