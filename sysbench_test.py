@@ -276,6 +276,31 @@ def install_sysbench():
     return pkg_manager.install_package("sysbench")
 
 
+def get_latest_fastfetch_release(arch: str) -> str:
+    """获取 fastfetch 最新版本的下载URL"""
+    try:
+        # 获取最新版本信息
+        api_url = "https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest"
+        response = requests.get(api_url, timeout=10)
+        response.raise_for_status()
+        release_info = response.json()
+
+        # 获取版本号
+        latest_version = release_info["tag_name"]
+
+        # 构建下载URL
+        download_url = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{latest_version}/fastfetch-linux-{arch}.tar.gz"
+
+        logger.info(f"Found latest fastfetch version: {latest_version}")
+        return download_url
+    except Exception as e:
+        # 如果API调用失败，回退到固定版本
+        fallback_version = "2.38.0"
+        logger.warning(f"Failed to get latest fastfetch version: {str(e)}")
+        logger.warning(f"Falling back to version {fallback_version}")
+        return f"https://github.com/fastfetch-cli/fastfetch/releases/download/{fallback_version}/fastfetch-linux-{arch}.tar.gz"
+
+
 def install_fastfetch():
     """Install fastfetch with system detection"""
     logger = logging.getLogger("sysbench_tester")
@@ -293,20 +318,12 @@ def install_fastfetch():
     # Create package manager
     pkg_manager = PackageManager(system_info)
 
-    # Try package manager installation first
-    if pkg_manager.install_package("fastfetch"):
-        return True
-
     # If package manager installation fails, try GitHub release
     logger.info("Package manager installation failed, trying GitHub release...")
 
     # fastfetch release URL template
-    FASTFETCH_RELEASE = (
-        "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-{arch}.tar.gz"
-    )
-https://github.com/fastfetch-cli/fastfetch/releases/download/2.38.0/fastfetch-linux-amd64.tar.gz
+    release_url = get_latest_fastfetch_release(system_info.arch)
     # Download and install from release
-    release_url = FASTFETCH_RELEASE.format(arch=system_info.arch)
     with tempfile.TemporaryDirectory() as temp_dir:
         package_path = os.path.join(temp_dir, "fastfetch.tar.gz")
         if pkg_manager.download_package_from_githubrelease(release_url, package_path):
