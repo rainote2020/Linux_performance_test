@@ -2,7 +2,7 @@
 
 # global configuration
 global:
-  enabled_tests: ["cpu", "memory", "fileio", "network"]
+  enabled_tests: ["cpu", "memory", "fileio"]
 
 # cpu test configuration
 cpu:
@@ -29,17 +29,13 @@ memory:
 # fileio test configuration
 fileio:
   enabled: true
-  file_total_size: "4G"
-  file_num: 4
-  threads: 4
+  file_total_size: "1G"
+  file_num: 1
+  threads: 1
   time: 60
   modes:  # test modes
     - name: "rndrw"
       enabled: true
-    - name: "seqrd"
-      enabled: true
-    - name: "seqwr"
-      enabled: false
   cleanup: true  # whether to clean up files after tests
 
 # network test configuration

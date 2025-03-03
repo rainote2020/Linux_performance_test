@@ -302,7 +302,7 @@ def install_fastfetch():
 
     # fastfetch release URL template
     FASTFETCH_RELEASE = (
-        "https://github.com/fastfetch-cli/fastfetch/releases/download/2.8.7/fastfetch-2.8.7-{arch}.tar.gz"
+        "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-{arch}.tar.gz"
     )
 
     # Download and install from release
@@ -559,53 +559,6 @@ class SysbenchTester:
         except json.JSONDecodeError:
             return {"error": "Failed to parse iperf3 JSON output"}
 
-    def visualize_results(self):
-        """Create visualization for test results"""
-        try:
-            import matplotlib.pyplot as plt
-            import numpy as np
-
-            # 创建结果可视化目录
-            viz_dir = os.path.join(self.result_dir, "visualizations")
-            os.makedirs(viz_dir, exist_ok=True)
-
-            # CPU测试可视化
-            cpu_results = {}
-            for test_name in ["cpu_single_thread", "cpu_multi_thread"]:
-                if (
-                    test_name in self.results["benchmark_results"]
-                    and self.results["benchmark_results"][test_name]["status"] == "success"
-                ):
-                    result = self._parse_cpu_result(self.results["benchmark_results"][test_name]["output"])
-                    if result["events_per_second"]:
-                        cpu_results[test_name.replace("cpu_", "")] = float(
-                            result["events_per_second"].split()[0]
-                        )
-
-            if cpu_results:
-                plt.figure(figsize=(10, 6))
-                bars = plt.bar(cpu_results.keys(), cpu_results.values())
-                plt.title("CPU Performance: Events per Second")
-                plt.ylabel("Events/sec")
-                for bar in bars:
-                    height = bar.get_height()
-                    plt.text(
-                        bar.get_x() + bar.get_width() / 2.0,
-                        height + 5,
-                        f"{height:.2f}",
-                        ha="center",
-                        va="bottom",
-                    )
-                plt.savefig(os.path.join(viz_dir, "cpu_performance.png"))
-                plt.close()
-
-            # 更多可视化代码可以根据需要添加...
-
-            logger.info(f"Visualizations saved to: {viz_dir}")
-        except ImportError:
-            logger.warning("Matplotlib not installed, skipping visualization")
-            logger.info("Install matplotlib with: pip install matplotlib")
-
     def save_results(self):
         """Save test results"""
         # Save raw JSON results
@@ -674,8 +627,17 @@ class SysbenchTester:
                         f.write(f"Write Speed: {result['write_throughput']} MiB/s\n")
                     f.write(f"Total Latency: {result['latency_sum']} ms\n")
 
-        # 生成可视化结果
-        self.visualize_results()
+            # Network test results
+            if (
+                "network" in self.results["benchmark_results"]
+                and self.results["benchmark_results"]["network"]["status"] == "success"
+            ):
+                result = self._parse_network_result(self.results["benchmark_results"]["network"]["output"])
+                f.write(f"\nNetwork Test\n")
+                f.write("-" * 30 + "\n")
+                f.write(f"Send Speed: {result.get('send_speed', 'N/A')}\n")
+                f.write(f"Receive Speed: {result.get('recv_speed', 'N/A')}\n")
+                f.write(f"Retransmits: {result.get('retransmits', 'N/A')}\n")
 
         logger.info("Test completed!")
         logger.info(f"Results saved to: {self.result_dir}/")

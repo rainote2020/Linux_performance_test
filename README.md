@@ -7,7 +7,7 @@
 - 自动安装依赖软件包（sysbench、fastfetch）
 - 支持多种 Linux 发行版（基于apt、yum、dnf、pacman包管理器）
 - 测试项目可配置（CPU单/多线程、内存、磁盘I/O、网络）
-- 测试结果自动保存和可视化
+- 测试结果自动保存为文本报告
 - 系统信息收集
 - YAML 配置格式
 
@@ -21,9 +21,7 @@ cd Linux_performance_test
 
 2. 安装依赖：
 ```bash
-pip install pyyaml requests
-# 可视化功能需要matplotlib
-pip install matplotlib
+pip install -r requirements.txt
 ```
 
 ## 使用方法
@@ -39,7 +37,6 @@ python sysbench_test.py custom_config.yaml
 3. 查看测试结果：
    - 原始数据：`results_YYYYMMDD_HHMMSS/raw_results.json`
    - 摘要报告：`results_YYYYMMDD_HHMMSS/report.txt`
-   - 可视化图表：`results_YYYYMMDD_HHMMSS/visualizations/`
 
 ## 配置说明
 
