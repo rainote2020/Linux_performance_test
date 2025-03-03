@@ -93,7 +93,7 @@ class SystemDetector:
         if arch in ["x86_64", "amd64"]:
             return "amd64"
         elif arch in ["aarch64", "arm64"]:
-            return "arm64"
+            return "aarch64"
         elif arch in ["armv7l", "armhf"]:
             return "armhf"
         else:
@@ -304,7 +304,7 @@ def install_fastfetch():
     FASTFETCH_RELEASE = (
         "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-{arch}.tar.gz"
     )
-
+https://github.com/fastfetch-cli/fastfetch/releases/download/2.38.0/fastfetch-linux-amd64.tar.gz
     # Download and install from release
     release_url = FASTFETCH_RELEASE.format(arch=system_info.arch)
     with tempfile.TemporaryDirectory() as temp_dir:
